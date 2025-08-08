@@ -1,0 +1,52 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes (UTC)
+  workflow_dispatch:         # manual run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_URLS: ${{ secrets.RENDER_URLS }}
+      MAX_TIME: "20"        # timeout per request (s)
+      LATENCY_WARN: "2.0"   # warn if slower than this (s)
+      USER_AGENT: "render-keepalive/1.0 (+github actions)"
+    steps:
+      - name: Ping URLs
+        id: ping
+        run: |
+          echo "## Keep-alive Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          printf "| URL | HTTP | Latency (s) |\n|---|---:|---:|\n" >> "$GITHUB_STEP_SUMMARY"
+
+          FAIL=0
+          while IFS= read -r URL; do
+            [ -z "$URL" ] && continue
+            OUT=$(curl -sS -o /dev/null \
+              -H "User-Agent: ${USER_AGENT}" \
+              --head \
+              --max-time "${MAX_TIME}" \
+              --retry 2 --retry-all-errors \
+              -w "%{http_code} %{time_total}" \
+              "$URL" ) || true
+
+            CODE=$(echo "$OUT" | awk '{print $1}')
+            TIME=$(echo "$OUT" | awk '{print $2}')
+            printf "| %s | %s | %s |\n" "$URL" "$CODE" "$TIME" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$CODE" -ge 400 ] || awk "BEGIN {exit !($TIME > $LATENCY_WARN)}"; then
+              FAIL=1
+              echo "::warning title=Slow or failing ping::${URL} -> code=${CODE}, time=${TIME}s"
+            fi
+          done <<< "${TARGET_URLS}"
+
+          exit $FAIL
