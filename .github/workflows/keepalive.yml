@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET_URLS: ${{ secrets.RENDER_URLS }}
-      MAX_TIME: "20"        # timeout per request (s)
+      MAX_TIME: "70"        # timeout per request (s)
       LATENCY_WARN: "2.0"   # warn if slower than this (s)
       USER_AGENT: "render-keepalive/1.0 (+github actions)"
     steps:
